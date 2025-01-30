@@ -15,6 +15,7 @@
 """Tests for documentation parser."""
 
 import collections
+from collections import abc
 import dataclasses
 import inspect
 import textwrap
@@ -96,7 +97,7 @@ class TestClass(ParentClass):
   CLASS_MEMBER = 'a class member'
 
 
-class ConcreteMutableMapping(collections.MutableMapping):
+class ConcreteMutableMapping(abc.MutableMapping):
   """MutableMapping subclass to repro getsource() IndexError."""
 
   def __init__(self):
@@ -525,8 +526,10 @@ class ParserTest(parameterized.TestCase):
     self.assertCountEqual(doc_info.compatibility.keys(),
                           {'numpy', 'two words!'})
 
-    self.assertEqual(doc_info.compatibility['numpy'],
-                     'NumPy has nothing as awesome as this function.\n')
+    self.assertEqual(
+        doc_info.compatibility['numpy'],
+        'NumPy has nothing as awesome as this function.',
+    )
 
   def test_downgrade_h1_docstrings(self):
     h1_docstring = textwrap.dedent("""\
@@ -796,7 +799,7 @@ class ParserTest(parameterized.TestCase):
 
     self.assertEqual('Instance of `m.A`', result)
 
-  def testIsClasssAttr(self):
+  def testIsClassAttr(self):
     result = parser.is_class_attr('test_module.test_function',
                                   {'test_module': test_module})
     self.assertFalse(result)
@@ -804,6 +807,7 @@ class ParserTest(parameterized.TestCase):
     result = parser.is_class_attr('TestClass.test_function',
                                   {'TestClass': TestClass})
     self.assertTrue(result)
+
 
 RELU_DOC = """Computes rectified linear: `max(features, 0)`
 
@@ -857,6 +861,33 @@ class TestParseDocstring(absltest.TestCase):
     self.assertEqual(returns.text,
                      '\nSome tensors, with the same type as the input.\n')
     self.assertLen(returns.items, 2)
+
+  def test_title_block(self):
+    docstring = textwrap.dedent("""\
+      hello
+ 
+      Attributes:
+        extra paragraph?
+        item: description
+          describe describe
+        item2 (int): is a number
+        this is not an item: really not 
+        this either: nope
+
+      goodbye
+    """)
+    docstring_parts = parser.TitleBlock.split_string(docstring)
+    print(docstring_parts)
+    self.assertEqual('hello', docstring_parts[0])
+    self.assertIsInstance(docstring_parts[1], parser.TitleBlock)
+    self.assertEqual('\ngoodbye\n', docstring_parts[2])
+
+    block = docstring_parts[1]
+    self.assertEqual('\nextra paragraph?\n', block.text)
+    self.assertEqual('item', block.items[0][0])
+    self.assertEqual('item2', block.items[1][0])
+    self.assertStartsWith(block.items[1][1], '`int`')
+    self.assertLen(block.items, 2)
 
   def test_strip_todos(self):
     input_str = ("""#  TODO(blah) blah
